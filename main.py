@@ -18,16 +18,15 @@ sigma_e = (P_t) ** (-1*alpha)
 sigma_n = 1
 
 H_sample = np.random.normal(0, 1, (K, M, Q))
-H_error = np.random.normal(0,sigma_e, (K,M,Q))
+H_error = np.random.normal(0,sigma_e, (K, M, Q))
 H_hat = H_sample - H_error
-print(H_sample)
 
 P_k = np.zeros((K, M, Q))
 P_k_H = np.zeros((K, Q, M))
 # Private precoder P initialization
 for k in range(K): # Private precoder
     P_k[k] = H_hat[k]
-    P_k_H[k] = np.conjugate(H_hat[k])
+    P_k_H[k] = np.conjugate(H_hat[k]).T
 
 # common precoder P_c initialization
 P_c = np.zeros((M,Q))
@@ -63,7 +62,7 @@ for n in range(iter_num):
     R_pk = np.zeros((K,Q,Q))
     for k in range(K):
         R_ck[k] = np.eye(Q) + np.sum([H_k_H[k] @ P_k[i] @ P_k_H[i] @ H_k[k] for i in range(K)])
-        R_pk[k] = R_ck - H_k_H[k] @ P_k[k] @ P_k_H[k] @ H_k[k]
+        R_pk[k] = R_ck[k] - H_k_H[k] @ P_k[k] @ P_k_H[k] @ H_k[k]
 
     # Generate MMSE filter matrix
     G_ck = np.zeros((K, Q, Q))
@@ -81,20 +80,58 @@ for n in range(iter_num):
     E_pk = np.zeros((K, Q, Q))
     U_ck = np.zeros((K, Q, Q))
     U_pk = np.zeros((K, Q, Q))
+    U_ck_H = np.zeros((K, Q, Q))
+    U_pk_H = np.zeros((K, Q, Q))
     for k in range(K):
         E_ck[k] = np.eye(Q) / (np.eye(Q) + P_c_H @ H_k[k] / R_ck[k] @ H_k_H[k] @ P_c)
         E_pk[k] = np.eye(Q) / (np.eye(Q) + P_k_H[k] @ H_k[k] / R_pk[k] @ H_k_H[k] @ P_k[k])
         U_ck[k] = np.eye(Q) + P_c_H @ H_k[k] / R_ck[k] @ H_k_H[k] @ P_c
         U_pk[k] = np.eye(Q) + P_k_H[k] @ H_k[k] / R_pk[k] @ H_k_H[k] @ P_k[k]
+        U_ck_H[k] = np.conjugate(U_ck[k]).T
+        U_pk_H[k] = np.conjugate(U_pk[k]).T
 
     # Vectorization
     p_c = vectorization(P_c)
-    p_k = np.zeros((K, Q*K, 1))
+    p_k = np.zeros((K, Q*M, 1))
     for k in range(K):
         p_k[k] = vectorization(P_k[k])
 
     # Compute A, A', a, a'
-    A_prime_ck = np.zeros((K,Q,Q))
+    A_prime_ck = np.zeros((K,Q*M,Q*M))
+    A_ck = np.zeros((K,Q*M,Q*M))
+    A_pk = np.zeros((K,Q*M,Q*M))
+    a_ck = np.zeros((K, Q*M, 1))
+    a_pk = np.zeros((K, Q*M, 1))
+    Phi_ck = np.zeros(K)
+    Phi_pk = np.zeros(K)
+
     for k in range(K):
-        A_prime_ck[k] = np.kron(np.eye(Q),H_k[k] @ G_ck_H[k] @ U_ck[k] @ G_ck[k] @ H_k_H[k])
+        A_prime_ck[k] = np.kron(np.eye(Q), H_k[k] @ G_ck_H[k] @ U_ck[k] @ G_ck[k] @ H_k_H[k])
+        A_ck[k] = np.kron(np.eye(Q), H_k[k] @ G_ck_H[k] @ U_ck[k] @ G_ck[k] @ H_k_H[k])
+        A_pk[k] = np.kron(np.eye(Q), H_k[k] @ G_pk_H[k] @ U_pk[k] @ G_pk[k] @ H_k_H[k])
+        a_ck[k] = vectorization(H_k[k] @ G_ck_H[k] @ U_ck_H[k])
+        a_ck[k] = vectorization(H_k[k] @ G_pk_H[k] @ U_pk_H[k])
+        Phi_ck[k] = 1 * np.trace(U_ck[k] @ G_ck[k] @ G_ck_H[k]) + np.trace(U_ck[k]) - np.log2(np.linalg.det(U_ck[k]))
+        Phi_pk[k] = 1 * np.trace(U_pk[k] @ G_pk[k] @ G_pk_H[k]) + np.trace(U_pk[k]) - np.log2(np.linalg.det(U_pk[k]))
+
+    # Append to tmp
+    A_prime_ck_tmp.append(A_prime_ck)
+    A_ck_tmp.append(A_ck)
+    A_pk_tmp.append(A_pk)
+    a_ck_tmp.append(a_ck)
+    a_pk_tmp.append(a_pk)
+    Phi_ck_tmp.append(Phi_ck)
+    Phi_pk_tmp.append(Phi_pk)
+
+    # Sample average
+    A_hat_prime_ck = np.mean(A_prime_ck_tmp,0)
+    A_hat_ck = np.mean(A_ck_tmp,0)
+    A_hat_pk = np.mean(A_pk_tmp,0)
+    a_hat_ck = np.mean(a_ck_tmp,0)
+    a_hat_pk = np.mean(a_pk_tmp,0)
+    Phi_hat_ck = np.mean(Phi_ck_tmp,0)
+    Phi_hat_pk = np.mean(Phi_pk_tmp,0)
+
+    # Obtain precoder P through CVX tool
+
 
